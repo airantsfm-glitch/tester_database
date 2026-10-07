@@ -1,1 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <title>My Video Library</title>
+
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: white;
+    }
+
+    header {
+      padding: 25px;
+      text-align: center;
+      background: #181818;
+      border-bottom: 1px solid #333;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+    }
+
+    .subtitle {
+      color: #aaa;
+      margin: 0;
+    }
+
+    .upload-area {
+      margin: 25px auto;
+      width: min(90%, 900px);
+      padding: 35px;
+      border: 2px dashed #555;
+      border-radius: 15px;
+      text-align: center;
+      background: #181818;
+      transition: 0.2s;
+    }
+
+    .upload-area.dragover {
+      border-color: #6c63ff;
+      background: #222;
+    }
+
+    .upload-button {
+      display: inline-block;
+      padding: 12px 20px;
+      background: #6c63ff;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+
+    .upload-button:hover {
+      background: #574fff;
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    #status {
+      margin-top: 15px;
+      color: #aaa;
+    }
+
+    .video-grid {
+      width: min(95%, 1400px);
+      margin: 30px auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+      padding-bottom: 40px;
+    }
+
+    .video-card {
+      background: #1c1c1c;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #333;
+    }
+
+    .video-card video {
+      width: 100%;
+      display: block;
+      background: black;
+      aspect-ratio: 16 / 9;
+      object-fit: contain;
+    }
+
+    .video-info {
+      padding: 12px;
+    }
+
+    .video-name {
+      font-weight: bold;
+      word-break: break-word;
+      margin-bottom: 10px;
+    }
+
+    .delete-button {
+      width: 100%;
+      padding: 9px;
+      border: none;
+      border-radius: 7px;
+      background: #d33;
+      color: white;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .delete-button:hover {
+      background: #b22;
+    }
+
+    .empty {
+      text-align: center;
+      color: #888;
+      padding: 50px;
+      grid-column: 1 / -1;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <h1>My Video Library</h1>
+    <p class="subtitle">Upload, watch, and manage your videos</p>
+  </header>
+
+  <div class="upload-area" id="uploadArea">
+
+    <h2>Drop videos here</h2>
+
+    <p>or</p>
+
+    <label class="upload-button" for="fileInput">
+      Browse Videos
+    </label>
+
+    <input
+      id="fileInput"
+      type="file"
+      accept="video/*"
+      multiple
+    >
+
+    <div id="status"></div>
+
+  </div>
+
+  <main class="video-grid" id="videoGrid">
+    <div class="empty">Loading videos...</div>
+  </main>
+
+
+  <script>
+
+    /* =========================================================
+       SUPABASE SETTINGS
+       ========================================================= */
+
+    // REPLACE THIS WITH YOUR SUPABASE PROJECT URL
+    const SUPABASE_URL = "https://jzbvgnyuowe...supabase.co";
+
+    // REPLACE THIS WITH YOUR SUPABASE PUBLISHABLE KEY
+    const SUPABASE_KEY = "sb_publishable_tT5C2cBvBvSW_ITsgyiIDQ_Iv1sgK2v";
+
+
+    const supabaseClient = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_KEY
+    );
+
+    const BUCKET = "videos";
+
+
+    /* =========================================================
+       PAGE ELEMENTS
+       ========================================================= */
+
+    const uploadArea = document.getElementById("uploadArea");
+    const fileInput = document.getElementById("fileInput");
+    const status = document.getElementById("status");
+    const videoGrid = document.getElementById("videoGrid");
+
+
+    /* =========================================================
+       LOAD VIDEOS
+       ========================================================= */
+
+    async function loadVideos() {
+
+      videoGrid.innerHTML =
+        '<div class="empty">Loading videos...</div>';
+
+      const { data, error } = await supabaseClient
+        .storage
+        .from(BUCKET)
+        .list("", {
+          limit: 100,
+          sortBy: {
+            column: "created_at",
+            order: "desc"
+          }
+        });
+
+      if (error) {
+        console.error(error);
+
+        videoGrid.innerHTML =
+          '<div class="empty">Could not load videos.</div>';
+
+        return;
+      }
+
+      const videos = data.filter(file => {
+
+        const name = file.name.toLowerCase();
+
+        return (
+          name.endsWith(".mp4") ||
+          name.endsWith(".webm") ||
+          name.endsWith(".mov") ||
+          name.endsWith(".m4v") ||
+          name.endsWith(".avi")
+        );
+
+      });
+
+      if (videos.length === 0) {
+
+        videoGrid.innerHTML =
+          '<div class="empty">No videos uploaded yet.</div>';
+
+        return;
+      }
+
+      videoGrid.innerHTML = "";
+
+      videos.forEach(file => {
+        createVideoCard(file);
+      });
+    }
+
+
+    /* =========================================================
+       CREATE VIDEO CARD
+       ========================================================= */
+
+    function createVideoCard(file) {
+
+      const { data } = supabaseClient
+        .storage
+        .from(BUCKET)
+        .getPublicUrl(file.name);
+
+      const videoURL = data.publicUrl;
+
+      const card = document.createElement("div");
+      card.className = "video-card";
+
+      const video = document.createElement("video");
+
+      video.src = videoURL;
+      video.controls = true;
+      video.preload = "metadata";
+      video.playsInline = true;
+
+      const info = document.createElement("div");
+      info.className = "video-info";
+
+      const name = document.createElement("div");
+      name.className = "video-name";
+
+      name.textContent = file.name;
+
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "delete-button";
+      deleteButton.textContent = "Delete Video";
+
+      deleteButton.onclick = async () => {
+
+        const confirmed = confirm(
+          "Are you sure you want to delete this video?"
+        );
+
+        if (!confirmed) return;
+
+        deleteButton.disabled = true;
+        deleteButton.textContent = "Deleting...";
+
+        const { error } = await supabaseClient
+          .storage
+          .from(BUCKET)
+          .remove([file.name]);
+
+        if (error) {
+
+          console.error(error);
+
+          alert("Could not delete the video.");
+
+          deleteButton.disabled = false;
+          deleteButton.textContent = "Delete Video";
+
+          return;
+        }
+
+        card.remove();
+
+        if (videoGrid.children.length === 0) {
+
+          videoGrid.innerHTML =
+            '<div class="empty">No videos uploaded yet.</div>';
+
+        }
+
+      };
+
+      info.appendChild(name);
+      info.appendChild(deleteButton);
+
+      card.appendChild(video);
+      card.appendChild(info);
+
+      videoGrid.appendChild(card);
+    }
+
+
+    /* =========================================================
+       UPLOAD VIDEOS
+       ========================================================= */
+
+    fileInput.addEventListener("change", () => {
+
+      const files = Array.from(fileInput.files);
+
+      uploadFiles(files);
+
+    });
+
+
+    async function uploadFiles(files) {
+
+      if (!files.length) return;
+
+      for (const file of files) {
+
+        if (!file.type.startsWith("video/")) {
+
+          alert(file.name + " is not a video.");
+
+          continue;
+        }
+
+        status.textContent =
+          "Uploading " + file.name + "...";
+
+        /*
+          Make a safe filename.
+        */
+
+        const cleanName = file.name
+          .replace(/[^a-zA-Z0-9._-]/g, "_");
+
+        const fileName =
+          Date.now() + "_" + cleanName;
+
+
+        /*
+          Upload the actual video.
+        */
+
+        const { error } = await supabaseClient
+          .storage
+          .from(BUCKET)
+          .upload(fileName, file, {
+            contentType: file.type,
+            upsert: false
+          });
+
+
+        if (error) {
+
+          console.error(error);
+
+          alert(
+            "Could not upload " +
+            file.name +
+            "\n\n" +
+            error.message
+          );
+
+          continue;
+        }
+
+        status.textContent =
+          "Uploaded " + file.name + "!";
+
+      }
+
+      fileInput.value = "";
+
+      await loadVideos();
+
+      status.textContent = "Upload complete!";
+    }
+
+
+    /* =========================================================
+       DRAG AND DROP
+       ========================================================= */
+
+    uploadArea.addEventListener("dragover", event => {
+
+      event.preventDefault();
+
+      uploadArea.classList.add("dragover");
+
+    });
+
+
+    uploadArea.addEventListener("dragleave", () => {
+
+      uploadArea.classList.remove("dragover");
+
+    });
+
+
+    uploadArea.addEventListener("drop", event => {
+
+      event.preventDefault();
+
+      uploadArea.classList.remove("dragover");
+
+      const files =
+        Array.from(event.dataTransfer.files);
+
+      uploadFiles(files);
+
+    });
+
+
+    /* =========================================================
+       START
+       ========================================================= */
+
+    loadVideos();
+
+  </script>
+
+</body>
+</html>
